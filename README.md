@@ -1,10 +1,13 @@
-# balance-car-rl
+# UCAS-RL-2026SP
 
 WHEELTEC B585 二阶平衡车的强化学习控制器。在 Python 仿真环境中训练 RL 策略，通过 WiFi 部署到实车替代 LQR 控制器。
 
 ## 快速开始
 
 ```bash
+git clone https://github.com/<your-username>/UCAS-RL-2026SP.git
+cd UCAS-RL-2026SP
+
 # 安装依赖
 uv sync
 

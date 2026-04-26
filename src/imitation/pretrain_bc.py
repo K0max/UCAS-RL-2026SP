@@ -15,6 +15,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
+from tqdm import trange
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from src.train.config import TrainConfig
@@ -52,8 +53,9 @@ def pretrain(cfg: TrainConfig | None = None):
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     criterion = nn.MSELoss()
 
-    for epoch in range(cfg.pretrain_epochs):
-        total_loss = 0
+    pbar = trange(cfg.pretrain_epochs, desc="BC pretrain")
+    for epoch in pbar:
+        total_loss = 0.0
         for s_batch, a_batch in loader:
             pred = model(s_batch)
             loss = criterion(pred, a_batch)
@@ -63,12 +65,11 @@ def pretrain(cfg: TrainConfig | None = None):
             total_loss += loss.item()
 
         avg_loss = total_loss / len(loader)
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch {epoch+1}/{cfg.pretrain_epochs}, Loss: {avg_loss:.6f}")
+        pbar.set_postfix(loss=f"{avg_loss:.6f}")
 
     out_path = REPO_ROOT / "data" / "models" / "bc_pretrained.pt"
     torch.save(model.state_dict(), str(out_path))
-    print(f"Pretrained model saved to {out_path}")
+    print(f"\nPretrained model saved to {out_path}")
 
 
 if __name__ == "__main__":

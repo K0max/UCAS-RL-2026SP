@@ -11,26 +11,26 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from tqdm import trange
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.env.balance_car_env import BalanceCarEnv
 from src.utils.lqr import matched_lqr_control
 
 
-def validate(n_episodes=20, max_steps=1000, verbose=True):
+def validate(n_episodes=20, max_steps=1000):
     env = BalanceCarEnv(noise_std=0.0)
     K = env.matched_lqr_gain
 
-    if verbose:
-        print(f"Env A-BK eigenvalues (all should be negative):")
-        CL = env.A - env.B @ K
-        eigs = np.linalg.eigvals(CL)
-        print(f"  {sorted(eigs.real)}\n")
+    print("Env A-BK eigenvalues (all should be negative):")
+    CL = env.A - env.B @ K
+    eigs = np.linalg.eigvals(CL)
+    print(f"  {sorted(eigs.real)}\n")
 
     results = []
-    for ep in range(n_episodes):
+    for ep in trange(n_episodes, desc="Validating LQR"):
         obs, _ = env.reset()
-        total_reward = 0
+        total_reward = 0.0
         for step in range(max_steps):
             u_L, u_R = matched_lqr_control(obs, K)
             action = np.array([u_L, u_R], dtype=np.float32)
@@ -43,10 +43,6 @@ def validate(n_episodes=20, max_steps=1000, verbose=True):
         survived = step + 1
         success = not terminated
         results.append((success, survived, total_reward))
-
-        if verbose:
-            status = "OK" if success else "FAIL"
-            print(f"  Episode {ep+1:3d}: {status}  steps={survived:4d}  reward={total_reward:.1f}")
 
     n_success = sum(r[0] for r in results)
     avg_reward = np.mean([r[2] for r in results])

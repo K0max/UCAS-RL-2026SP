@@ -46,7 +46,7 @@ def train(cfg: TrainConfig):
         env=env,
         learning_rate=cfg.learning_rate,
         gamma=cfg.gamma,
-        verbose=1,
+        verbose=0,
         tensorboard_log=cfg.log_dir,
         device="auto",
         policy_kwargs=dict(net_arch=cfg.net_arch),
@@ -79,9 +79,11 @@ def train(cfg: TrainConfig):
     )
 
     print(f"=== Training {cfg.algo} for {cfg.total_timesteps} steps ===")
+    print(f"    TensorBoard logs: {cfg.log_dir}")
     model.learn(
         total_timesteps=cfg.total_timesteps,
         callback=[checkpoint_cb, eval_cb],
+        progress_bar=True,
     )
 
     final_path = Path(cfg.model_dir) / f"balance_{cfg.algo.lower()}_final"
@@ -92,7 +94,7 @@ def train(cfg: TrainConfig):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--algo", default="SAC", choices=["SAC", "PPO", "TD3"])
-    parser.add_argument("--timesteps", type=int, default=500_000)
+    parser.add_argument("--timesteps", type=int, default=5_000)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--noise", type=float, default=0.01)
     args = parser.parse_args()

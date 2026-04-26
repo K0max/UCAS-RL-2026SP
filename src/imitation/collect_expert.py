@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from tqdm import trange
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from src.env.balance_car_env import BalanceCarEnv
@@ -24,7 +25,7 @@ def collect(n_episodes=200, max_steps=1000):
     all_states, all_actions = [], []
 
     success = 0
-    for ep in range(n_episodes):
+    for ep in trange(n_episodes, desc="Collecting expert data"):
         obs, _ = env.reset()
         for step in range(max_steps):
             u_L, u_R = matched_lqr_control(obs, K)
@@ -47,8 +48,8 @@ def collect(n_episodes=200, max_steps=1000):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(str(out_path), states=states, actions=actions)
 
-    print(f"Collected {len(states)} transitions from {n_episodes} episodes")
-    print(f"  Success rate (survived full episode): {success}/{n_episodes}")
+    print(f"\nCollected {len(states)} transitions from {n_episodes} episodes")
+    print(f"  Success rate: {success}/{n_episodes}")
     print(f"  Saved to {out_path}")
 
 

@@ -3,7 +3,7 @@
 ## 目录结构
 
 ```
-repo/
+UCAS-RL-2026SP/
 ├── pyproject.toml                 # uv 项目配置 & 依赖
 ├── progress.md                    # ← 你在这里
 ├── src/
@@ -83,7 +83,7 @@ scipy 做的是**调仿真环境**, 不是训练:
 5. 结果: matched LQR 19/20 episode 通过, 说明仿真环境自身是自洽的
 6. **代价**: 仿真和实车之间存在 sim-to-real gap, 后续需要缩小
 
-### 嵌入式代码不需要复制进 repo
+### 嵌入式代码不需要复制进项目
 
 因为我们选的是 **方案 A (PC 端推理)**: Python 跑在电脑上, C 固件跑在 STM32 上.
 通信协议 (帧解析/打包) 已经在 `deploy/` 中用 Python 重新实现了.
@@ -119,7 +119,7 @@ scipy 做的是**调仿真环境**, 不是训练:
 ### 第一步: 跑一次 RL 训练 (纯 Python, 不需要小车)
 
 ```bash
-cd repo/
+cd UCAS-RL-2026SP/
 
 # 先验证环境正常
 uv run src/validate_env.py

@@ -1,5 +1,5 @@
 [project]
-name = "balance-car-rl"
+name = "UCAS-RL-2026SP"
 version = "0.1.0"
 description = "RL controller for WHEELTEC B585 two-stage balancing robot"
 readme = "README.md"
@@ -12,6 +12,8 @@ dependencies = [
     "matplotlib",
     "tensorboard",
     "scipy>=1.17.1",
+    "tqdm",
+    "rich",
 ]
 
 [[tool.uv.index]]
