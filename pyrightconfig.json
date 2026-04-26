@@ -1,3 +1,4 @@
 {
-  "reportPossiblyUnboundVariable": "none"
+  "reportPossiblyUnboundVariable": "none",
+  "reportPrivateImportUsage": "none",
 }
