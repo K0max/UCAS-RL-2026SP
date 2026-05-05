@@ -1,14 +1,41 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
 build/
 dist/
 wheels/
 *.egg-info
-*.gitkeep
 
 # Virtual environments
-.venv
+.venv/
 
-# Log
+# Training outputs
 data/logs/
+data/models/*.zip
+data/expert/*.npz
+
+# Generated firmware header
+firmware/rl_model.h
+
+# Keil build artifacts
+firmware/keil/MDK-ARM/MiniBalance/
+firmware/keil/MDK-ARM/*.uvguix.*
+firmware/keil/MDK-ARM/*.lst
+firmware/keil/MDK-ARM/*.map
+*.o
+*.d
+*.crf
+*.axf
+*.dep
+*.lnp
+*.sct
+*.htm
+*.build_log.htm
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

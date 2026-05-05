@@ -120,13 +120,12 @@ uv run src/deploy/export_to_c.py --quantize int8   # int8 量化更小更快
 # 生成 firmware/rl_model.h, 包含权重数组 + rl_predict() 函数
 ```
 
-然后在 Keil 工程里:
+然后修改 `firmware/keil/MiniBalance/control.c`:
 
 ```c
-// control.c
 #include "rl_model.h"
 
-// 在 Control_mode == 1 分支中替换 LQR:
+// 在 Control_mode == 1 的 else 分支中替换 WiFi 接收为本地推理:
 float state[8] = {theta_L, theta_R, theta_1, theta_2,
                   theta_L_dot, theta_R_dot, theta_dot_1, theta_dot_2};
 float action[2];
@@ -135,7 +134,7 @@ u_L = action[0];
 u_R = action[1];
 ```
 
-重新编译烧录即可. 板载推理无 WiFi 延迟, 控制频率 = 固件原生 100Hz.
+将 `firmware/rl_model.h` 复制到 `firmware/keil/MiniBalance/` 目录, 重新编译烧录即可. 板载推理无 WiFi 延迟, 控制频率 = 固件原生 100Hz.
 
 | 网络 | 参数量 | float32 大小 | int8 大小 | STM32 推理 |
 |------|--------|-------------|----------|-----------|
@@ -210,7 +209,14 @@ UCAS-RL-2026SP/
     ├── README.md                  # 零基础烧录指南
     ├── MiniBalance.hex            # 预编译固件 (Control_mode=1)
     ├── tools/                     # mcuisp.exe + CH9102 驱动
-    └── docs/                      # 烧录截图 + WiFi 配置 PDF
+    ├── docs/                      # 烧录截图 + WiFi 配置 PDF
+    └── keil/                      # Keil 源码工程 (STM32 HAL)
+        ├── MDK-ARM/               #   Keil 工程文件 (.uvprojx)
+        ├── Core/                  #   STM32 初始化 (main.c, usart, tim)
+        ├── MiniBalance/           #   控制逻辑 (control.c, KF, filter)
+        ├── HAREWARE/              #   外设驱动 (encoder, motor, MPU6050)
+        ├── Drivers/               #   STM32 HAL 库 + CMSIS
+        └── SYSTEM/                #   delay, sys
 ```
 
 ## 状态空间与动作空间 (来自 tutorial.pdf)
