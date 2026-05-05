@@ -68,10 +68,21 @@ uv run src/deploy/collect_real.py                  # 手动 Ctrl+C 停止
 
 输出 `data/expert/real_car_data.npz` (states, actions, next_states).
 
-用途:
-- **行为克隆**: 用真实 `(state, action)` 替代仿真数据跑 `pretrain_bc.py`
-- **System ID**: 用 `(state, action, next_state)` 拟合真实 A, B 矩阵, 修正仿真参数
-- **Offline RL**: 给每个 transition 算 reward, 跑 CQL/IQL
+采集完成后, 有三种训练方式:
+
+```bash
+# 1. 行为克隆: 直接模仿实车 LQR 的 (state, action) 对
+uv run src/imitation/pretrain_bc.py --data data/expert/real_car_data.npz
+
+# 2. Offline RL: 用真实数据预填 replay buffer, 再在仿真中微调
+uv run src/train/train_offline.py --data data/expert/real_car_data.npz --timesteps 200000
+# 或纯离线 (不与仿真交互, 数据量要够大):
+uv run src/train/train_offline.py --gradient-steps-only 5000
+
+# 3. System ID: 拟合真实 A, B 矩阵, 修正仿真参数以缩小 sim-to-real gap
+uv run src/train/system_id.py --data data/expert/real_car_data.npz
+# 输出 data/models/real_AB.npz, 可加载到 env 中替换仿真参数后重新训练
+```
 
 ### 模仿学习预训练 (可选加分)
 
@@ -188,7 +199,9 @@ UCAS-RL-2026SP/
 │   ├── env/balance_car_env.py     # Gym 仿真环境 (线性化 x_dot = Ax + Bu)
 │   ├── train/
 │   │   ├── config.py              # TrainConfig 超参
-│   │   └── train.py               # SAC / PPO / TD3 训练入口
+│   │   ├── train.py               # SAC / PPO / TD3 训练入口
+│   │   ├── train_offline.py       # Offline RL (实车数据 + 仿真微调)
+│   │   └── system_id.py           # System ID (拟合真实 A, B 矩阵)
 │   ├── deploy/
 │   │   ├── wifi_proto.py          # WiFi 通信工具 (帧解析, buffer drain)
 │   │   ├── wifi_test.py           # 连通性测试
