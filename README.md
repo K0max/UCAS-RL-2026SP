@@ -1,52 +1,46 @@
 # UCAS-RL-2026SP
 
-WHEELTEC B585 二阶平衡车的强化学习控制器. 在 Python 仿真环境中训练 RL 策略, 通过 WiFi 部署到实车替代 LQR 控制器.
+WHEELTEC B585 二阶平衡车的强化学习控制器. 用 RL 策略替代 LQR 控制器, 通过 WiFi 部署到实车.
+
+> 课程作业参考: `tutorial.pdf` (强化学习平衡车资料整理)
 
 ## 架构
 
 ```
-[STM32 固件]              [PC Python]
-  传感器 200Hz   ──WiFi──>   策略推理
-  电机驱动      <──WiFi──   动作输出
+[STM32 固件]                [PC Python]
+  传感器 200Hz   ──WiFi──>    策略推理 (RL / LQR)
+  电机 PI 控制  <──WiFi──    动作输出 (u_L, u_R)
 ```
 
-固件 (`firmware/MiniBalance.hex`, 已编译, 直接烧录) 上跑 `Control_mode = 1`, 只负责传感器读取和电机驱动. 所有控制逻辑 (LQR / RL) 在 PC 上跑.
+固件只负责传感器读取、状态上报和电机驱动. 控制逻辑 (LQR / RL) 全部在 PC 上跑 Python.
 
-## 离线 Pipeline 提醒
+两种运行模式:
+- **`Control_mode = 0`** (默认固件): 板载 LQR 自行平衡 + WiFi 上报状态 → 用于**数据采集**
+- **`Control_mode = 1`** (修改版固件): 等待 PC 发送控制指令 → 用于 **RL/LQR 实车部署**
 
-⚠️ **连上小车 WiFi (`WHEELTEC_*` / `Minibalance_*`) 后笔记本无法上网**. 任何需要网络的步骤必须先做完:
+## 离线 Pipeline
 
-1. `git clone` 仓库
-2. `uv sync` (下载 ~2GB torch + sb3)
-3. 训练模型 (不需要网, 但建议提前训好)
-4. (可选) `tensorboard --logdir data/logs --port 6006` 让浏览器缓存一次静态资源
-
-完成后再切到小车 WiFi 跑 deploy 脚本.
-
-## 快速开始
+⚠️ 连上小车 WiFi 后笔记本无法上网. 所有需要网络的步骤先做完:
 
 ```bash
 git clone https://github.com/k0max/UCAS-RL-2026SP.git
 cd UCAS-RL-2026SP
-
-# 1. 安装依赖
-uv sync
-
-# 2. 验证仿真环境 (matched LQR 能稳住 = 环境自洽)
-uv run src/validate_env.py
-
-# 3. 训练 (默认 SAC 5000 步只是 smoke test, 实战需要 200k~500k)
-uv run src/train/train.py --algo SAC --timesteps 300000
-
-# 4. 看曲线
-uv run tensorboard --logdir data/logs
+uv sync                          # 下载依赖 (~2GB torch + sb3, 必须有网)
+uv run src/validate_env.py       # 验证仿真环境
+uv run src/train/train.py --timesteps 300000  # 训练模型 (不需要网)
 ```
+
+然后再切到小车 WiFi 跑 deploy 脚本.
 
 ## 训练
 
+### 方式 1: 仿真训练 (不需要小车)
+
+RL agent 和仿真环境 (`BalanceCarEnv`) 交互, 自动生成训练数据:
+
 ```bash
 # 三种算法
-uv run src/train/train.py --algo SAC      # 推荐, 样本效率高
+uv run src/train/train.py --algo SAC     # 推荐, 样本效率高
 uv run src/train/train.py --algo PPO
 uv run src/train/train.py --algo TD3
 
@@ -55,9 +49,29 @@ uv run src/train/train.py --algo SAC --timesteps 500000 --lr 1e-4
 
 # 加观测噪声 (提高 sim-to-real 鲁棒性)
 uv run src/train/train.py --noise 0.05
+
+# TensorBoard 看曲线
+uv run tensorboard --logdir data/logs
 ```
 
-模型保存到 `data/models/balance_<algo>_final.zip`, 周期 checkpoint 自动滚动 (最多保留 2 个), TensorBoard 日志在 `data/logs/`.
+模型保存到 `data/models/balance_<algo>_final.zip`, checkpoint 自动滚动保留最新 2 个.
+
+### 方式 2: 实车数据采集 + 离线训练 (推荐)
+
+让小车以板载 LQR 自行平衡, PC 被动接收真实状态数据:
+
+```bash
+# 连接小车 WiFi 后:
+uv run src/deploy/collect_real.py --duration 120   # 采集 120 秒
+uv run src/deploy/collect_real.py                  # 手动 Ctrl+C 停止
+```
+
+输出 `data/expert/real_car_data.npz` (states, actions, next_states).
+
+用途:
+- **行为克隆**: 用真实 `(state, action)` 替代仿真数据跑 `pretrain_bc.py`
+- **System ID**: 用 `(state, action, next_state)` 拟合真实 A, B 矩阵, 修正仿真参数
+- **Offline RL**: 给每个 transition 算 reward, 跑 CQL/IQL
 
 ### 模仿学习预训练 (可选加分)
 
@@ -68,78 +82,101 @@ uv run src/imitation/pretrain_bc.py       # 行为克隆预训练
 
 ## 实车部署
 
-前置条件: 小车已换 DT06 WiFi 模块, 烧录 `firmware/MiniBalance.hex` (详见 `firmware/README.md`).
+前置条件: 小车已换 DT06 WiFi 模块, 烧录修改版固件 `firmware/MiniBalance.hex` (`Control_mode = 1`), 详见 `firmware/README.md`.
 
 ```bash
-# 1. 笔记本连接小车 WiFi (默认密码 12345678)
-#    系统提示"无法访问 Internet" 忽略, 保持连接
-#    确认 IP 网段:
-ip addr | grep 192.168.4    # Linux
-ifconfig | grep 192.168.4   # macOS
+# 笔记本连接小车 WiFi (默认密码 12345678)
+ip addr | grep 192.168.4    # 确认 IP 网段
 
-# 2. 连通性测试
+# 连通性测试
 uv run src/deploy/wifi_test.py
 
-# 3. LQR 基线 (用固件原版 K 矩阵, 应该能稳)
+# LQR 基线 (验证通信 + 物理装配)
 uv run src/deploy/wifi_lqr.py
 
-# 4. RL 部署 (默认加载 data/models/balance_sac_final.zip)
+# RL 部署
 uv run src/deploy/wifi_rl.py
 uv run src/deploy/wifi_rl.py --algo PPO
-uv run src/deploy/wifi_rl.py --device cuda            # 强制 CUDA (会自动 fallback CPU)
-uv run src/deploy/wifi_rl.py --action-scale 30        # 调大动作幅度
-uv run src/deploy/wifi_rl.py --model path/to/x.zip
+uv run src/deploy/wifi_rl.py --action-scale 30     # 调动作幅度
+uv run src/deploy/wifi_rl.py --device cuda          # 有 NVIDIA 卡时
 ```
 
-`wifi_rl.py` 默认 `device=auto`, 有 CUDA 用 CUDA, 否则 CPU. **注意**: 256x256 小网络 + bs=1 在 CPU 上通常更快 (CUDA 的 H2D/D2H 拷贝开销比 forward 大), 看 `max_pred` 数字决定要不要切 CPU.
+### 关于 action-scale
 
-测完恢复联网: 断开小车 WiFi 重连日常 WiFi 即可.
+RL 训练时 `U_MAX=200`, 但固件期望 LQR 量级 (几千). `--action-scale` 乘以 RL 输出后再发送, 默认 20.
+
+## 板载部署 (替代 WiFi, 可选进阶)
+
+将训练好的模型固化到 STM32, 完全脱离 PC 运行. 需要用小网络 (F103 无 FPU, 48KB RAM, 256KB ROM):
+
+```bash
+# 1. 训练小网络 (64x64, ~19KB float32, 推理 ~1.3ms)
+uv run src/train/train.py --net-arch 64 64 --timesteps 300000
+
+# 2. 导出为 C 头文件
+uv run src/deploy/export_to_c.py
+uv run src/deploy/export_to_c.py --quantize int8   # int8 量化更小更快
+
+# 生成 firmware/rl_model.h, 包含权重数组 + rl_predict() 函数
+```
+
+然后在 Keil 工程里:
+
+```c
+// control.c
+#include "rl_model.h"
+
+// 在 Control_mode == 1 分支中替换 LQR:
+float state[8] = {theta_L, theta_R, theta_1, theta_2,
+                  theta_L_dot, theta_R_dot, theta_dot_1, theta_dot_2};
+float action[2];
+rl_predict(state, action);
+u_L = action[0];
+u_R = action[1];
+```
+
+重新编译烧录即可. 板载推理无 WiFi 延迟, 控制频率 = 固件原生 100Hz.
+
+| 网络 | 参数量 | float32 大小 | int8 大小 | STM32 推理 |
+|------|--------|-------------|----------|-----------|
+| 8→256→256→2 | 68,610 | 268 KB (超 ROM) | 67 KB | ~9ms (太慢) |
+| 8→64→64→2 | 4,866 | 19 KB | 5 KB | ~1.3ms |
+| 8→32→32→2 | 1,378 | 5.4 KB | 1.3 KB | ~0.4ms |
 
 ## 故障排查
 
-### 1. 看控制循环健康度
-
-跑 `wifi_lqr.py` / `wifi_rl.py` 时每秒打印:
+### 看控制循环健康度
 
 ```
 [LQR] 95.3 Hz | u=(+1234.5,+1234.5) | t1=+0.012 t2=-0.008
-[RL]  92.1Hz | u=(+3210,+3105) | t1=+0.012 t2=-0.008 | max_pred=2.1ms drops=0
+[RL]  92.1Hz | u=(+3210,+3105) | t1=+0.012 | max_pred=2.1ms drops=0
 ```
 
-- **Hz**: 80~150 健康, <30 太低 (WiFi 信号差或网卡省电)
-- **u**: LQR 量级几百~几千; RL 量级 ±200 (训练时 `U_MAX=200`), 经 `--action-scale` 放大后应到几千
-- **t1/t2**: 状态量; 平放静止应该接近 0 抖动, 越界 (>0.5) → 小车没放正或 IMU 漂移
-- **max_pred**: RL 单次推理耗时, 应 <5ms; 大于 20ms 考虑切 CPU
-- **drops**: 500ms 内没收到数据的次数, 应一直为 0
+- **Hz** 80~150 正常; <30 WiFi 信号差
+- **t1/t2** 平放应接近 0; 越界 → 小车没放正 / IMU 漂移 → 按复位键
+- **max_pred** 应 <5ms; >20ms 换 `--device cpu`
+- **drops** 应为 0; 持续增长 → WiFi 信号问题
 
-### 2. LQR 不稳 — 物理装配问题
+### LQR 不稳 → 物理问题
 
-`wifi_lqr.py` 用的是固件出厂同款 K 矩阵, 不稳大概率不是算法的锅:
+固件出厂同款 K 矩阵, 不稳排查: 平地放置、摆杆拧紧、电池充满、地面摩擦够大.
 
-- 小车没放在平地上 → 平放 5 秒重启 (按复位键), 让 IMU 重新校零
-- 摆杆松动 / 没装正 → 拧紧
-- 电池电量低 → 充满电 (低压时电机扭矩不够)
-- 地面打滑 → 换硬地板木地板
+### RL 轮子不转 → action-scale 太小
 
-### 3. RL 轮子不转 / 间歇微动 — 动作量级太小
+训练时 ±200, 发到固件不够驱动电机. 调大 `--action-scale 20`~`30`.
 
-RL 训练时 `U_MAX=200`, 但固件实际期望 LQR 量级 (几千). 解决: `--action-scale 20`~`30`.
+### RL 数据中断 → 策略太差
 
-### 4. RL 数据流间歇性中断
+5000 步 SAC 几乎是随机策略, 乱抽搐 → 超限触发固件保护 → 停止上报. 训 ≥200k 步再测.
 
-最常见原因: **5000 步的策略本质是噪声**, 输出乱抽搐 → 小车晃动剧烈 → 角度超限触发固件保护 → 停止上报.
+### LQR 稳 + RL 不稳 → sim-to-real gap
 
-解决: 训一个像样的模型 (≥200k 步).
-
-### 5. LQR 能稳 + RL 不稳 — sim-to-real gap
-
-预期之内, 是项目的核心难点. 缩小 gap 的方向:
-
-- **加观测噪声训练**: `uv run src/train/train.py --noise 0.05`
-- **Domain randomization**: 修改 `balance_car_env.py:build_AB()`, 在 `reset()` 里随机化物理参数 (l1, l2, m1, m2, I1, I2)
-- **行为克隆 warm-start**: 先 `collect_expert.py` + `pretrain_bc.py`, 用 LQR 数据初始化 policy
-- **延长训练**: 默认 5000 步只是 smoke test
-- **System identification**: 在实车上跑 LQR 收集 (state, action, next_state), 拟合真实 A, B 矩阵, 重新调仿真参数
+核心难点, 缩小方向:
+- 加观测噪声: `--noise 0.05`
+- Domain randomization: 在 `reset()` 里随机化物理参数
+- 行为克隆 warm-start: `collect_expert.py` + `pretrain_bc.py`
+- 延长训练: ≥300k 步
+- System ID: `collect_real.py` 采集真实数据 → 拟合 A, B → 修正仿真
 
 ## 目录结构
 
@@ -147,53 +184,55 @@ RL 训练时 `U_MAX=200`, 但固件实际期望 LQR 量级 (几千). 解决: `--
 UCAS-RL-2026SP/
 ├── pyproject.toml                 # uv 项目配置 & 依赖
 ├── README.md                      # ← 你在这里
+├── tutorial.pdf                   # 课程作业指南
 ├── src/
-│   ├── env/balance_car_env.py     # Gym 仿真环境 (线性化 x_dot = Ax + Bu, scipy 求解 matched LQR)
+│   ├── env/balance_car_env.py     # Gym 仿真环境 (线性化 x_dot = Ax + Bu)
 │   ├── train/
 │   │   ├── config.py              # TrainConfig 超参
 │   │   └── train.py               # SAC / PPO / TD3 训练入口
 │   ├── deploy/
-│   │   ├── wifi_proto.py          # WiFi 通信工具 (drain buffer, 取最新帧, 发动作)
+│   │   ├── wifi_proto.py          # WiFi 通信工具 (帧解析, buffer drain)
 │   │   ├── wifi_test.py           # 连通性测试
-│   │   ├── wifi_lqr.py            # LQR 基线
-│   │   └── wifi_rl.py             # RL 模型部署
+│   │   ├── wifi_lqr.py            # LQR 基线 (Control_mode=1)
+│   │   ├── wifi_rl.py             # RL 部署 (Control_mode=1)
+│   │   ├── collect_real.py        # 实车数据采集 (Control_mode=0)
+│   │   └── export_to_c.py         # 模型导出为 C (板载部署)
 │   ├── imitation/
-│   │   ├── collect_expert.py      # 用 matched LQR 采集专家数据
+│   │   ├── collect_expert.py      # 仿真专家数据
 │   │   └── pretrain_bc.py         # 行为克隆预训练
-│   ├── utils/lqr.py               # LQR 控制器 (实车 K 矩阵 + 仿真 K 矩阵)
-│   └── validate_env.py            # 用 matched LQR 验证仿真环境
+│   ├── utils/lqr.py               # LQR 控制器 (实车 K + 仿真 K)
+│   └── validate_env.py            # 仿真环境验证
 ├── data/
 │   ├── expert/                    # 专家数据 (.npz)
 │   ├── models/                    # 训练好的模型 (.zip)
 │   └── logs/                      # TensorBoard 日志
 └── firmware/
     ├── README.md                  # 零基础烧录指南
-    ├── MiniBalance.hex            # 预编译固件
+    ├── MiniBalance.hex            # 预编译固件 (Control_mode=1)
     ├── tools/                     # mcuisp.exe + CH9102 驱动
     └── docs/                      # 烧录截图 + WiFi 配置 PDF
 ```
 
-## 关键设计说明
+## 状态空间与动作空间 (来自 tutorial.pdf)
 
-### 仿真环境的 LQR 不是固件那个
+**状态 (8 维)**:
+- `theta_L`, `theta_R`: 左右轮角度 (rad)
+- `theta_L_dot`, `theta_R_dot`: 左右轮角速度 (rad/s)
+- `theta_1`, `theta_dot_1`: 车身倾角及角速度 (rad, rad/s)
+- `theta_2`, `theta_dot_2`: 摆杆倾角及角速度 (rad, rad/s)
 
-固件实车 K 矩阵 (K13=-5492, K14=18921 等) 是为实车特定动力学手工调出来的. 仿真环境的物理参数 (m, l, I) 是估计值, 跟实车不一致 — 直接把实车 K 用在仿真里全部翻车.
+**动作 (2 维)**:
+- `u_L`, `u_R`: LQR/RL 计算出的左右轮角加速度 (rad/s²)
 
-解决: 仿真环境用 `scipy.linalg.solve_continuous_are` 为自己求一个 matched LQR (`env.matched_lqr_gain`). 用它验证环境自洽 (`validate_env.py` 19~20/20 通过).
+固件接收到 `(u_L, u_R)` 后, 内部通过 PI 控制器转换为 PWM 驱动电机.
 
-代价: 仿真和实车之间存在 sim-to-real gap, 这是部署到实车时的核心难点 (见故障排查 #5).
+## 设计说明
 
-### 训练数据从哪来?
+### 仿真 vs 实车 LQR
 
-不需要预先准备. RL 训练是 agent 和仿真环境实时交互产生 `(state, action, reward, next_state)`, 自动存入 replay buffer. 只有可选的模仿学习需要先用 LQR 采集专家数据.
+固件实车 K 矩阵 (K13=-5492, K14=18921) 为实车特定动力学设计. 仿真物理参数是估计值, 和实车不一致 — 仿真环境用 `scipy.linalg.solve_continuous_are` 为自己求 matched LQR, 验证环境自洽.
 
-### 嵌入式代码不需要改
+### 通信协议
 
-固件 `Control_mode = 1` 已经是"接收外部指令"模式. 我们只需要:
-
-- 通信协议 (帧解析 / 打包) → 用 Python 重新实现在 `deploy/wifi_proto.py`
-- LQR 增益 → 抄到 `utils/lqr.py:K_REAL`
-- 硬件常量 (轮径 / 编码器 / 控制频率) → 抄到 `env/balance_car_env.py`
-- 安全限制 (theta_1 > ±45° 停机) → `env.THETA1_LIMIT`
-
-原始 C 代码留在 `lab/` 作为参考, 不需要复制进 repo.
+- 小车 → PC: ASCII 帧 `{f1:f2:...:f13}`, 13 个 float (8 状态 + 5 目标)
+- PC → 小车: 二进制 `[0xAA][u_L: f32 LE][u_R: f32 LE][checksum]`, 共 10 字节

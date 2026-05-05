@@ -119,6 +119,8 @@ def main():
     parser.add_argument("--timesteps", type=int, default=5_000)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--noise", type=float, default=0.01)
+    parser.add_argument("--net-arch", type=int, nargs="+", default=[256, 256],
+                        help="Hidden layer sizes (e.g. --net-arch 64 64 for on-chip deployment)")
     args = parser.parse_args()
 
     cfg = TrainConfig(
@@ -126,6 +128,7 @@ def main():
         total_timesteps=args.timesteps,
         learning_rate=args.lr,
         noise_std=args.noise,
+        net_arch=args.net_arch,
     )
     train(cfg)
 
