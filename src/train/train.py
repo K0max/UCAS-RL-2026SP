@@ -24,6 +24,26 @@ from src.train.config import TrainConfig
 
 
 ALGO_MAP = {"SAC": SAC, "PPO": PPO, "TD3": TD3}
+KEEP_CHECKPOINTS = 2
+
+
+class RollingCheckpointCallback(CheckpointCallback):
+    """Like CheckpointCallback but only keeps the most recent `keep` files."""
+
+    def __init__(self, *args, keep: int = KEEP_CHECKPOINTS, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.keep = keep
+
+    def _on_step(self) -> bool:
+        result = super()._on_step()
+        if self.n_calls % self.save_freq == 0:
+            ckpts = sorted(
+                Path(self.save_path).glob(f"{self.name_prefix}_*_steps.zip"),
+                key=lambda p: p.stat().st_mtime,
+            )
+            for old in ckpts[:-self.keep]:
+                old.unlink(missing_ok=True)
+        return result
 
 
 def make_env(cfg: TrainConfig):
@@ -63,10 +83,11 @@ def train(cfg: TrainConfig):
 
     model = algo_cls(**algo_kwargs)
 
-    checkpoint_cb = CheckpointCallback(
+    checkpoint_cb = RollingCheckpointCallback(
         save_freq=cfg.save_freq,
         save_path=cfg.model_dir,
         name_prefix=f"balance_{cfg.algo.lower()}",
+        keep=KEEP_CHECKPOINTS,
     )
 
     eval_cb = EvalCallback(
@@ -94,6 +115,7 @@ def train(cfg: TrainConfig):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--algo", default="SAC", choices=["SAC", "PPO", "TD3"])
+    # 500_000 takes too long, so I changed to 5_000
     parser.add_argument("--timesteps", type=int, default=5_000)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--noise", type=float, default=0.01)
