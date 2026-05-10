@@ -5,6 +5,7 @@ RL 训练入口脚本
   uv run src/train/train.py               # 默认 SAC
   uv run src/train/train.py --algo PPO    # 切换算法
   uv run src/train/train.py --timesteps 1000000
+  uv run src/train/train.py --n-envs 8    # 8 个并行环境 (加速采样)
 
 训练完成后模型保存在 data/models/, 日志在 data/logs/ (可用 tensorboard 查看).
 """
@@ -17,6 +18,7 @@ import gymnasium as gym
 from stable_baselines3 import SAC, PPO, TD3
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from src.env.balance_car_env import BalanceCarEnv
@@ -47,17 +49,22 @@ class RollingCheckpointCallback(CheckpointCallback):
 
 
 def make_env(cfg: TrainConfig):
-    env = BalanceCarEnv(noise_std=cfg.noise_std)
-    env = Monitor(env)
-    return env
+    def _init():
+        env = BalanceCarEnv(noise_std=cfg.noise_std)
+        env = Monitor(env)
+        return env
+    return _init
 
 
 def train(cfg: TrainConfig):
     Path(cfg.log_dir).mkdir(parents=True, exist_ok=True)
     Path(cfg.model_dir).mkdir(parents=True, exist_ok=True)
 
-    env = make_env(cfg)
-    eval_env = make_env(cfg)
+    if cfg.n_envs > 1:
+        env = SubprocVecEnv([make_env(cfg) for _ in range(cfg.n_envs)])
+    else:
+        env = make_env(cfg)()
+    eval_env = make_env(cfg)()
 
     algo_cls = ALGO_MAP[cfg.algo]
 
@@ -100,6 +107,7 @@ def train(cfg: TrainConfig):
     )
 
     print(f"=== Training {cfg.algo} for {cfg.total_timesteps} steps ===")
+    print(f"    Parallel envs: {cfg.n_envs} | Device: auto")
     print(f"    TensorBoard logs: {cfg.log_dir}")
     model.learn(
         total_timesteps=cfg.total_timesteps,
@@ -121,6 +129,8 @@ def main():
     parser.add_argument("--noise", type=float, default=0.01)
     parser.add_argument("--net-arch", type=int, nargs="+", default=[256, 256],
                         help="Hidden layer sizes (e.g. --net-arch 64 64 for on-chip deployment)")
+    parser.add_argument("--n-envs", type=int, default=1,
+                        help="Number of parallel envs (>1 uses SubprocVecEnv)")
     args = parser.parse_args()
 
     cfg = TrainConfig(
@@ -129,6 +139,7 @@ def main():
         learning_rate=args.lr,
         noise_std=args.noise,
         net_arch=args.net_arch,
+        n_envs=args.n_envs,
     )
     train(cfg)
 

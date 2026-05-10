@@ -27,6 +27,7 @@ class TrainConfig:
 
     # 网络
     net_arch: list = field(default_factory=lambda: [256, 256])
+    n_envs: int = 4
 
     # 日志 & 保存
     log_dir: str = str(REPO_ROOT / "data" / "logs")
