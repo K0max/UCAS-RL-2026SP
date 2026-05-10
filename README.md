@@ -38,6 +38,11 @@ uv run src/train/train.py --timesteps 300000  # 训练模型 (不需要网)
 > # 防止 uv run 把 CUDA torch 覆盖回 CPU 版 (仅对本项目生效)
 > cp .env.example .env   # 然后取消 UV_NO_SYNC=1 的注释
 > ```
+> `cp` 完之后请尝试重开命令行以重新加载 workspace 的环境变量
+> 或者手动 `source ./.env` 也行
+>
+> 如果此时 `uv run` 仍然会删除 CUDA torch 则请使用 `uv run --no-sync`
+>
 > 设置后 `uv run` 在本项目目录下不再自动同步, 添加新依赖时需手动 `uv sync`.
 
 然后再切到小车 WiFi 跑 deploy 脚本.
