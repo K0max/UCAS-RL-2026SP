@@ -30,13 +30,15 @@ uv run src/validate_env.py       # 验证仿真环境
 uv run src/train/train.py --timesteps 300000  # 训练模型 (不需要网)
 ```
 
-> **NVIDIA 用户**: `uv sync` 默认装 CPU 版 PyTorch. 有 NVIDIA 显卡加一个 `--extra`:
+> **NVIDIA 用户**: `uv sync` 默认装 CPU 版 PyTorch. 有 NVIDIA 显卡执行以下一次性设置:
 > ```bash
-> uv sync --extra cu124            # CUDA 12.4 (推荐, 最新驱动)
-> uv sync --extra cu121            # CUDA 12.1
-> uv sync --extra cu118            # CUDA 11.8 (旧驱动)
+> # 自动检测 CUDA 版本并安装对应 torch (只需运行一次)
+> UV_TORCH_BACKEND=auto uv pip install torch --reinstall
+>
+> # 防止 uv run 把 CUDA torch 覆盖回 CPU 版 (仅对本项目生效)
+> cp .env.example .env   # 然后取消 UV_NO_SYNC=1 的注释
 > ```
-> 查看本机 CUDA 版本: `nvidia-smi` 右上角.
+> 设置后 `uv run` 在本项目目录下不再自动同步, 添加新依赖时需手动 `uv sync`.
 
 然后再切到小车 WiFi 跑 deploy 脚本.
 
